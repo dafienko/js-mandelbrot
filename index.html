@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script type="module">
+
+import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r125/build/three.module.js';
+
+const canvas = document.getElementById("canvas");
+const renderer = new THREE.WebGLRenderer({canvas});
+renderer.antialiase = true;
+
+const mShader = {
+    uniforms: {
+        'screenSize': { type: "v2", value: new THREE.Vector2(800, 600)},
+        'gridOffset': { type: "v2", value: new THREE.Vector2(0, 0)},
+        'pixelsPerSquare': { type: "float", value: 100.0},
+    },
+
+    vertexShader: [
+        'uniform vec2 screenSize;',
+        'uniform vec2 gridOffset;',
+        'uniform float pixelsPerSquare;',
+
+        'varying vec2 cartesianPosition;',
+
+        'void main() {',
+        '   float scale = .5 / pixelsPerSquare;',
+        '   cartesianPosition = vec2(position.x * screenSize.x, position.y * screenSize.y) * scale + gridOffset;',
+        '	gl_Position = vec4( position.xyz, 1.0 );',
+        '}'
+    ].join('\n'),
+
+    fragmentShader: [
+        'uniform vec2 screenSize;',
+        'uniform float pixelsPerSquare;',
+
+        'varying vec2 cartesianPosition;',
+        
+        'vec2 squareComplexNumber(vec2 complex) {',
+        '   return vec2(pow(complex.x, 2.0) - pow(complex.y, 2.0), 2.0 * complex.x * complex.y);',
+        '}',
+        
+        'void main() {',
+        '   float distToLine = min( abs(cartesianPosition.x - round(cartesianPosition.x)), abs(cartesianPosition.y - round(cartesianPosition.y)) );',
+        '   if (distToLine < .5 / pixelsPerSquare) {',
+        '       gl_FragColor = vec4(1.0);',
+        '   } else {',
+        '       float numIterations = 100.0;',
+        '       float stability = 0.0;',
+        '       vec2 p = vec2(0.0);',
+        '       for (float i = 0.0; i < numIterations; i++) {', 
+        '           p = squareComplexNumber(p) + cartesianPosition;',
+        '           if (length(p) > 2.0) {',
+        '               break;',
+        '           } else {',
+        '              stability += 1.0;',
+        '           }',
+        '       }',
+
+        '       stability /= numIterations;',
+        '       float brightness = pow(stability, 2.0);',
+        '       gl_FragColor = vec4(brightness, brightness, max(.1, stability), 1.0);',
+        '   }',
+        '}'
+    ].join('\n')
+};
+
+let pps = 100
+let currentSize = new THREE.Vector2(800, 600);
+let w = 800, h = 500
+function updateSize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+
+    let size = new THREE.Vector2(w, h);
+    if (w != currentSize.x || h != currentSize.y) {
+        canvas.width = w;
+        canvas.height = h;
+        renderer.setSize(w, h);
+
+        pps = Math.min(w, h) * .4
+        mShader.uniforms.pixelsPerSquare.value = pps
+        mShader.uniforms.screenSize.value = new THREE.Vector2(w, h);
+
+        currentSize = size;
+    }
+}
+
+const scene = new THREE.Scene();
+const mainPlane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial(mShader))
+scene.add(mainPlane)
+
+const oCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, .1, 1000 );
+
+let lastTime = 0;
+function render(time) {
+    updateSize();
+
+    time *= 0.001;  // convert time to seconds
+    let dt = time - lastTime;
+    lastTime = time;
+
+    renderer.setRenderTarget(null);
+    renderer.clear(false, true, false);
+    renderer.render(scene, oCamera)
+}
+requestAnimationFrame(render);
+
+window.addEventListener('resize', function() {
+    requestAnimationFrame(render);
+})
+
+let offset = new THREE.Vector2(0, 0)
+let last = new THREE.Vector2(0, 0)
+let mouseDown = false
+canvas.addEventListener('mousedown', e => {
+    mouseDown = true;
+    last = new THREE.Vector2(e.offsetX, e.offsetY)
+})
+
+canvas.addEventListener('mousemove', e => {
+    if (mouseDown) {
+        let delta = new THREE.Vector2(e.offsetX, e.offsetY)
+        delta.sub(last).divideScalar(pps)
+        offset.add(new THREE.Vector2(-delta.x, delta.y))
+        last = new THREE.Vector2(e.offsetX, e.offsetY)
+        
+        mShader.uniforms.gridOffset.value = offset
+        
+        requestAnimationFrame(render);
+    }
+})
+
+canvas.addEventListener('wheel', e => {
+    let delta = -e.deltaY * .002 * pps
+    
+    let relScreenPos = new THREE.Vector2((e.offsetX - w / 2) / (w / 2), -(e.offsetY - h / 2) / (h/2))
+    let screenGridSize = new THREE.Vector2(w / 2, h / 2).divideScalar(pps)
+    let relGridPos = relScreenPos.clone().multiply(screenGridSize)
+    let newV = relGridPos.clone().multiplyScalar(pps / (pps + delta))
+    offset.add(relGridPos.sub(newV))
+
+    pps += delta    
+
+    mShader.uniforms.gridOffset.value = offset
+    mShader.uniforms.pixelsPerSquare.value = pps
+    
+    requestAnimationFrame(render);
+})
+
+canvas.addEventListener('mouseup', e => {
+    mouseDown = false;
+})
+
+
+        </script>
+    </head>
+    <body>
+        <canvas id="canvas" width=800 height=600 style="position:fixed; top:0;left:0; z-index: -1"></canvas>
+    </body>
+</html>
