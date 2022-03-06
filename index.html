@@ -15,6 +15,8 @@ const ctx = gridLayer.getContext("2d")
 const topLayer = document.getElementById("topLayer")
 const topCtx = topLayer.getContext("2d")
 
+let renderMandelbrot = false
+
 const mShader = {
     uniforms: {
         'screenSize': { type: "v2", value: new THREE.Vector2(800, 600)},
@@ -264,9 +266,16 @@ mandelbrotLayer.addEventListener('mouseup', e => {
     mouseDown = false;
 })
 
+const renderMandelbrotCheck = document.getElementById("renderMandelbrot")
+renderMandelbrotCheck.addEventListener('change', e => {
+    renderMandelbrot = renderMandelbrotCheck.checked
+
+	requestAnimationFrame(render);
+})
+
         </script>
     </head>
-    <body scroll="no" style="overflow: hidden">
+    <body scroll="no" style="overflow: hidden; margin: 0px; padding: 0px;">
 		<div>
 			<canvas id="gridLayer" width="700" height="600" style="position:fixed; top:0;left:0; z-index: 0; pointer-events: none;"></canvas>
 			<canvas id="mandelbrotLayer" width="700" height="600" style="position:fixed; top:0;left:0; z-index: 1;"></canvas>
@@ -276,7 +285,7 @@ mandelbrotLayer.addEventListener('mouseup', e => {
 		
 
 		<div style = "position: absolute; bottom: 8px; right: 8px; z-index: 3;">
-			<input type="checkbox" id="renderMandelbrot" value="Render" checked="True">
+			<input type="checkbox" id="renderMandelbrot" value="Render" checked="False">
 		</div>
     </body>
 </html>
