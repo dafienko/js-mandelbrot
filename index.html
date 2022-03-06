@@ -5,9 +5,15 @@
 
 import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r125/build/three.module.js';
 
-const canvas = document.getElementById("canvas");
-const renderer = new THREE.WebGLRenderer({canvas});
+const mandelbrotLayer = document.getElementById("mandelbrotLayer");
+const renderer = new THREE.WebGLRenderer({canvas: mandelbrotLayer, alpha: true });
 renderer.antialiase = true;
+
+const gridLayer = document.getElementById("gridLayer")
+const ctx = gridLayer.getContext("2d")
+
+const topLayer = document.getElementById("topLayer")
+const topCtx = topLayer.getContext("2d")
 
 const mShader = {
     uniforms: {
@@ -41,41 +47,52 @@ const mShader = {
         '}',
         
         'void main() {',
-        '   float distToLine = min( abs(cartesianPosition.x - round(cartesianPosition.x)), abs(cartesianPosition.y - round(cartesianPosition.y)) );',
-        '   if (distToLine < .5 / pixelsPerSquare) {',
-        '       gl_FragColor = vec4(1.0);',
-        '   } else {',
-        '       float numIterations = 100.0;',
-        '       float stability = 0.0;',
-        '       vec2 p = vec2(0.0);',
-        '       for (float i = 0.0; i < numIterations; i++) {', 
-        '           p = squareComplexNumber(p) + cartesianPosition;',
-        '           if (length(p) > 2.0) {',
-        '               break;',
-        '           } else {',
-        '              stability += 1.0;',
-        '           }',
-        '       }',
+        '	float numIterations = 100.0;',
+        '	float stability = 0.0;',
+        '	vec2 p = vec2(0.0);',
+        
+		'	for (float i = 0.0; i < numIterations; i++) {', 
+        '	    p = squareComplexNumber(p) + cartesianPosition;',
+        '	    if (length(p) > 2.0) {',
+        '	        break;',
+        '	    } else {',
+        '	       stability += 1.0;',
+        '	    }',
+        '	}',
 
-        '       stability /= numIterations;',
-        '       float brightness = pow(stability, 2.0);',
-        '       gl_FragColor = vec4(brightness, brightness, max(.1, stability), 1.0);',
-        '   }',
+        '	stability /= numIterations;',
+        '	float brightness = pow(stability, 2.0);',
+        '	gl_FragColor = vec4(brightness, brightness, max(.1, stability), stability);',
         '}'
     ].join('\n')
 };
 
 let pps = 100
+let offset = new THREE.Vector2(-.6, 0)
+mShader.uniforms.gridOffset.value = offset
 let currentSize = new THREE.Vector2(800, 600);
 let w = 800, h = 500
+let gridBL = new THREE.Vector2(-w, -h)
+gridBL.multiplyScalar(.5 / pps).add(offset)
+let gridTR = new THREE.Vector2(w, h)
+gridTR.multiplyScalar(.5 / pps).add(offset)
 function updateSize() {
-    w = window.innerWidth;
-    h = window.innerHeight;
+    w = window.innerWidth
+    h = window.innerHeight
+
+	gridBL = new THREE.Vector2(-w, -h)
+	gridBL.multiplyScalar(.5 / pps).add(offset)
+	gridTR = new THREE.Vector2(w, h)
+	gridTR.multiplyScalar(.5 / pps).add(offset)
 
     let size = new THREE.Vector2(w, h);
     if (w != currentSize.x || h != currentSize.y) {
-        canvas.width = w;
-        canvas.height = h;
+        mandelbrotLayer.width = w;
+        mandelbrotLayer.height = h;
+		gridLayer.width = w;
+		gridLayer.height = h;
+		topLayer.width = w
+		topLayer.height = h
         renderer.setSize(w, h);
 
         pps = Math.min(w, h) * .4
@@ -92,6 +109,93 @@ scene.add(mainPlane)
 
 const oCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, .1, 1000 );
 
+function gridToScreen(gridPos) {
+	let screenPos = gridPos.clone().sub(offset).multiplyScalar(pps).add(new THREE.Vector2(w, h).divideScalar(2))
+	return new THREE.Vector2(screenPos.x, h - screenPos.y)
+}
+
+function screenToGrid(screenPos) {
+	screenPos = new THREE.Vector2(screenPos.x, h - screenPos.y)
+	let gridPos = screenPos.clone().sub(new THREE.Vector2(w / 2, h / 2)).divideScalar(pps)
+	return gridPos.add(offset)
+}
+
+function drawText(ctx, text, pos, anchorPoint, ) {
+	let tm = ctx.measureText(text)
+	pos = pos.clone().sub(anchorPoint.clone().multiply(new THREE.Vector2(tm.width, tm.height)))
+	ctx.strokeText(text, pos.x, pos.y + 10);
+	ctx.fillText(text, pos.x, pos.y + 10);
+	
+}
+
+function drawGridLines() {
+	let majorLog = Math.log10(100 / pps)
+	let majorSpacing = Math.pow(10, Math.ceil(majorLog))
+	majorLog = Math.max(0, -majorLog)
+	let minorSpacing = majorSpacing / 10
+
+	// minor lines
+	ctx.beginPath();
+	ctx.strokeStyle = "#303030"
+	ctx.lineWidth = 1;
+	for (let y = Math.ceil(gridBL.y / minorSpacing) * minorSpacing; y < Math.ceil(gridTR.y / minorSpacing) * minorSpacing; y += minorSpacing) {
+		let p = gridToScreen(new THREE.Vector2(0, y))
+
+		ctx.moveTo(0, p.y)
+		ctx.lineTo(w, p.y)
+	}
+
+	for (let x = Math.ceil(gridBL.x / minorSpacing) * minorSpacing; x < Math.ceil(gridTR.x / minorSpacing) * minorSpacing; x += minorSpacing) {
+		let p = gridToScreen(new THREE.Vector2(x, 0))
+
+		ctx.moveTo(p.x, 0)
+		ctx.lineTo(p.x, h)
+	}
+
+	ctx.closePath();
+	ctx.stroke();
+
+	// major lines
+	let majorHorizontalPositions = [], majorVerticalPositions = []
+
+	ctx.beginPath();
+	ctx.strokeStyle = "#F0F0F0"
+	ctx.lineWidth = 1;
+	for (let y = Math.ceil(gridBL.y / majorSpacing) * majorSpacing; y < Math.ceil(gridTR.y / majorSpacing) * majorSpacing; y += majorSpacing) {
+		let p = gridToScreen(new THREE.Vector2(0, y))
+
+		majorHorizontalPositions.push([y, p.y])
+
+		ctx.moveTo(0, p.y)
+		ctx.lineTo(w, p.y)
+	}
+
+	for (let x = Math.ceil(gridBL.x / majorSpacing) * majorSpacing; x < Math.ceil(gridTR.x / majorSpacing) * majorSpacing; x += majorSpacing) {
+		let p = gridToScreen(new THREE.Vector2(x, 0))
+
+		majorVerticalPositions.push([x, p.x])
+
+		ctx.moveTo(p.x, 0)
+		ctx.lineTo(p.x, h)
+	}
+
+	ctx.closePath();
+	ctx.stroke();
+
+	topCtx.font = "13pt Arial"
+	topCtx.fillStyle = "#FFFFFF"
+	topCtx.strokeStyle = "#000000"
+	for (const data of majorHorizontalPositions) {
+		drawText(topCtx, data[0].toFixed(majorLog), new THREE.Vector2(20, data[1]), new THREE.Vector2(0, .5))
+		drawText(topCtx, data[0].toFixed(majorLog), new THREE.Vector2(w - 20, data[1]), new THREE.Vector2(1, .5))
+	}
+
+	for (const data of majorVerticalPositions) {
+		drawText(topCtx, data[0].toFixed(majorLog), new THREE.Vector2(data[1], 20), new THREE.Vector2(0.5, 0))
+		drawText(topCtx, data[0].toFixed(majorLog), new THREE.Vector2(data[1], h - 20), new THREE.Vector2(.5, 1))
+	}
+}
+
 let lastTime = 0;
 function render(time) {
     updateSize();
@@ -103,6 +207,15 @@ function render(time) {
     renderer.setRenderTarget(null);
     renderer.clear(false, true, false);
     renderer.render(scene, oCamera)
+
+	// clear grid layer
+	ctx.fillStyle = "#000010"
+	ctx.fillRect(0, 0, w, h);
+
+	// clear
+	topCtx.clearRect(0, 0, w, h);
+
+	drawGridLines()
 }
 requestAnimationFrame(render);
 
@@ -110,15 +223,14 @@ window.addEventListener('resize', function() {
     requestAnimationFrame(render);
 })
 
-let offset = new THREE.Vector2(0, 0)
 let last = new THREE.Vector2(0, 0)
 let mouseDown = false
-canvas.addEventListener('mousedown', e => {
+mandelbrotLayer.addEventListener('mousedown', e => {
     mouseDown = true;
     last = new THREE.Vector2(e.offsetX, e.offsetY)
 })
 
-canvas.addEventListener('mousemove', e => {
+mandelbrotLayer.addEventListener('mousemove', e => {
     if (mouseDown) {
         let delta = new THREE.Vector2(e.offsetX, e.offsetY)
         delta.sub(last).divideScalar(pps)
@@ -131,7 +243,7 @@ canvas.addEventListener('mousemove', e => {
     }
 })
 
-canvas.addEventListener('wheel', e => {
+mandelbrotLayer.addEventListener('wheel', e => {
     let delta = -e.deltaY * .002 * pps
     
     let relScreenPos = new THREE.Vector2((e.offsetX - w / 2) / (w / 2), -(e.offsetY - h / 2) / (h/2))
@@ -144,18 +256,27 @@ canvas.addEventListener('wheel', e => {
 
     mShader.uniforms.gridOffset.value = offset
     mShader.uniforms.pixelsPerSquare.value = pps
-    
+
     requestAnimationFrame(render);
 })
 
-canvas.addEventListener('mouseup', e => {
+mandelbrotLayer.addEventListener('mouseup', e => {
     mouseDown = false;
 })
 
-
         </script>
     </head>
-    <body>
-        <canvas id="canvas" width=800 height=600 style="position:fixed; top:0;left:0; z-index: -1"></canvas>
+    <body scroll="no" style="overflow: hidden">
+		<div>
+			<canvas id="gridLayer" width="700" height="600" style="position:fixed; top:0;left:0; z-index: 0; pointer-events: none;"></canvas>
+			<canvas id="mandelbrotLayer" width="700" height="600" style="position:fixed; top:0;left:0; z-index: 1;"></canvas>
+			<canvas id="topLayer" width="700" height="600" style="position:fixed; top:0;left:0; z-index: 2; pointer-events: none;"></canvas>
+			
+		</div>
+		
+
+		<div style = "position: absolute; bottom: 8px; right: 8px; z-index: 3;">
+			<input type="checkbox" id="renderMandelbrot" value="Render" checked="True">
+		</div>
     </body>
 </html>
