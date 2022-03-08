@@ -6,7 +6,7 @@
 import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r125/build/three.module.js';
 
 const mandelbrotLayer = document.getElementById("mandelbrotLayer");
-const renderer = new THREE.WebGLRenderer({canvas: mandelbrotLayer, alpha: true });
+const renderer = new THREE.WebGLRenderer({canvas: mandelbrotLayer, alpha: true, precision: "highp"});
 renderer.antialiase = true;
 
 const gridLayer = document.getElementById("gridLayer")
@@ -15,13 +15,15 @@ const ctx = gridLayer.getContext("2d")
 const topLayer = document.getElementById("topLayer")
 const topCtx = topLayer.getContext("2d")
 
-let renderMandelbrot = false
+let numIterations = 1
+let renderMandelbrot = document.getElementById("renderMandelbrot").checked
 
 const mShader = {
     uniforms: {
         'screenSize': { type: "v2", value: new THREE.Vector2(800, 600)},
         'gridOffset': { type: "v2", value: new THREE.Vector2(0, 0)},
         'pixelsPerSquare': { type: "float", value: 100.0},
+		'numIterations': { type: "float", value: 200},
     },
 
     vertexShader: [
@@ -41,6 +43,7 @@ const mShader = {
     fragmentShader: [
         'uniform vec2 screenSize;',
         'uniform float pixelsPerSquare;',
+		'uniform float numIterations;',
 
         'varying vec2 cartesianPosition;',
         
@@ -49,7 +52,6 @@ const mShader = {
         '}',
         
         'void main() {',
-        '	float numIterations = 100.0;',
         '	float stability = 0.0;',
         '	vec2 p = vec2(0.0);',
         
@@ -198,6 +200,50 @@ function drawGridLines() {
 	}
 }
 
+let test1 = Math.random() * 2 - 1
+let test2 = Math.random() * 2 - 1
+function drawSteps() {
+	let p = new THREE.Vector2(test1, test2)
+	let s = gridToScreen(p)
+	topCtx.moveTo(s.x, s.y)
+
+	let pts = []
+
+	topCtx.beginPath()
+	for (let i = 0; i < numIterations; i++) {
+		let exploded = false;
+		if (p.length() > 500) {
+			exploded = true;
+			p.clampLength(0, 500)
+		}
+
+		s = gridToScreen(p)
+		
+		topCtx.lineTo(s.x, s.y)
+		topCtx.moveTo(s.x, s.y)
+		pts.push(s)
+		
+		if (exploded) {
+			break;
+		}
+
+		p = new THREE.Vector2(Math.pow(p.x, 2.0) - Math.pow(p.y, 2.0), 2.0 * p.x * p.y)
+	}
+	topCtx.closePath()
+	
+	topCtx.fillStyle = "#FFFFFF"
+	topCtx.strokeStyle = "#000000"
+	topCtx.stroke()
+
+	for (let i = 0; i < pts.length; i++) {
+		let s = pts[i]
+
+		topCtx.fillStyle = "#000000"
+		topCtx.strokeStyle = "#FFFFFF"
+		drawText(topCtx, i.toString(), s, new THREE.Vector2(.5, .5))
+	}
+}
+
 let lastTime = 0;
 function render(time) {
     updateSize();
@@ -206,18 +252,21 @@ function render(time) {
     let dt = time - lastTime;
     lastTime = time;
 
-    renderer.setRenderTarget(null);
-    renderer.clear(false, true, false);
-    renderer.render(scene, oCamera)
-
-	// clear grid layer
+	// draw grid layer
 	ctx.fillStyle = "#000010"
 	ctx.fillRect(0, 0, w, h);
-
-	// clear
-	topCtx.clearRect(0, 0, w, h);
-
 	drawGridLines()
+
+	// render mid layer
+	renderer.setRenderTarget(null);
+    renderer.clear(false, true, false);
+	if (renderMandelbrot) {
+    	renderer.render(scene, oCamera)
+	}
+
+	// draw top layer
+	topCtx.clearRect(0, 0, w, h);
+	drawSteps()
 }
 requestAnimationFrame(render);
 
@@ -273,6 +322,25 @@ renderMandelbrotCheck.addEventListener('change', e => {
 	requestAnimationFrame(render);
 })
 
+function setIterations(i) {
+	numIterations = Math.max(0, Math.min(300, Math.round(i)))
+	document.getElementById("iterations").textContent = "Iterations: " + Math.round(numIterations)
+	mShader.uniforms.numIterations.value = numIterations
+	requestAnimationFrame(render);
+}
+setIterations(1)
+
+document.addEventListener('keydown', e => {
+    switch(e.code) {
+		case "ArrowUp":
+			setIterations(numIterations + 1 + numIterations * .05)
+			break;
+		case "ArrowDown":
+			setIterations(numIterations - (1 + numIterations * .05))
+			break;
+	}
+});
+
         </script>
     </head>
     <body scroll="no" style="overflow: hidden; margin: 0px; padding: 0px;">
@@ -283,9 +351,12 @@ renderMandelbrotCheck.addEventListener('change', e => {
 			
 		</div>
 		
+		<div style = "position: absolute; top: 8px; left: 8px; z-index: 3;">
+			<span id="iterations" style="color: white; font-family: Arial; font-size: 15pt; text-shadow: 0px 0px 3px #000000;">Iterations: </span>
+		</div>
 
 		<div style = "position: absolute; bottom: 8px; right: 8px; z-index: 3;">
-			<input type="checkbox" id="renderMandelbrot" value="Render" checked="False">
+			<input type="checkbox" id="renderMandelbrot" value="Render" checked="yes">
 		</div>
     </body>
 </html>
